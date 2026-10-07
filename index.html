@@ -562,12 +562,13 @@ body.semimg .aviso{display:flex}
     <div class="adm-sinal">DM</div>
     <span class="eyebrow">Área restrita</span>
     <h2 id="admPortaTitulo">Editar os protocolos</h2>
-    <p class="mini" style="margin:8px 0 22px">Crie seções, mova protocolos entre elas e adicione novos. Nada vai ao ar antes de você publicar.</p>
+    <p class="mini" style="margin:8px 0 22px">Crie seções, mova protocolos entre elas e adicione novos. Nada vai ao ar antes de você publicar — e cada publicação fica salva no histórico do GitHub.</p>
     <div class="campo" id="admCampoSenha">
-      <label for="admSenha">Senha da equipe <span class="req">*</span></label>
-      <input id="admSenha" type="password" autocomplete="current-password" placeholder="••••••••">
-      <span class="msg" id="admMsgSenha">Senha incorreta.</span>
+      <label for="admSenha">Token do GitHub <span class="req">*</span></label>
+      <input id="admSenha" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+      <span class="msg" id="admMsgSenha">Token inválido.</span>
     </div>
+    <p class="mini" style="margin:-6px 0 18px">O token fica só neste navegador e some ao fechar a aba. Não tem um? Peça ao responsável pelo site.</p>
     <button class="btn btn--laranja btn--bloco btn--caixa" type="submit" id="admBtnEntrar">Entrar</button>
     <p class="mini" style="margin-top:16px"><button type="button" id="admVoltar" style="border:0;background:none;color:var(--roxo);font-weight:600;cursor:pointer;padding:0">← Voltar para a biblioteca</button></p>
   </form>
@@ -651,6 +652,10 @@ var CONFIG = {
     or         : "79d225fe-527c-4f4c-84d4-f237dbcee1a2",
     campoPerfil: "field[7]"
   },
+  /* Repositório onde a área restrita grava o protocolos.json.
+     Vazio = descobre sozinho pelo endereço do GitHub Pages (usuario.github.io/repositorio).
+     Preencha se usar domínio próprio, ex.: dono:"dermomed", repo:"protocolos-dm". */
+  github: { dono:"", repo:"", branch:"main", arquivo:"protocolos.json" },
   links: {
     portal      : "https://sistema-marketing-dermomed.netlify.app",
     privacidade : "https://www.dermomed.com.br/pagina/politica-de-privacidade.html"
@@ -1017,8 +1022,8 @@ var SEMENTE = [
 ];
 
 /* ---------- catálogo ----------
-   A semente acima é o conteúdo publicado junto com a página. No site, a função
-   /api/catalogo devolve a versão que a equipe editou no painel e substitui a semente.
+   A semente acima é o conteúdo embutido na página. No site, o protocolos.json do
+   repositório (gravado pela área restrita) substitui a semente.
    Fora do site (preview), a semente é o que aparece — a página nunca fica vazia. */
 var AREA = AREA_PADRAO.slice();
 var P = SEMENTE;
@@ -1067,14 +1072,14 @@ $("#familias").innerHTML = Object.keys(FAM).map(function(k){
   return '<button class="aba aba--fam" data-fam="'+k+'" aria-pressed="false">'+nomeFam(k)+'</button>';
 }).join("");
 
-/* Busca a versão editada pela equipe. Se a função não existir (preview, file://),
-   segue com a semente sem barulho — e o link da área restrita fica escondido. */
+/* Busca o catálogo publicado (protocolos.json, ao lado do index.html no repositório).
+   Se não achar (preview, arquivo aberto local), segue com a semente embutida. */
 function carregar(){
-  fetch("/api/catalogo", { headers:{ accept:"application/json" } })
+  fetch(CONFIG.github.arquivo + "?v=" + Date.now(), { cache:"no-store", headers:{ accept:"application/json" } })
     .then(function(r){ if(!r.ok) throw 0; return r.json(); })
     .then(function(cat){
       $("#areaRestrita").hidden = false;
-      if(cat.vazio || !Array.isArray(cat.protocolos) || !cat.protocolos.length) return;
+      if(!Array.isArray(cat.secoes) || !cat.secoes.length || !Array.isArray(cat.protocolos) || !cat.protocolos.length) return;
       AREA = cat.secoes;
       P = cat.protocolos;
       if(cat.atualizadoEm){
@@ -1084,7 +1089,7 @@ function carregar(){
       montar();
       desenhar();
     })
-    .catch(function(){ /* preview sem função: a semente já está na tela */ });
+    .catch(function(){ /* sem protocolos.json: a semente já está na tela */ });
 }
 
 $("#areas").addEventListener("click", function(e){
@@ -1328,7 +1333,7 @@ function observar(){
    Mesmo arquivo, mesma URL: a página vira modo de edição depois do login.
    Toda alteração já reflete na biblioteca embaixo; só o "Publicar" grava no servidor. */
 (function(){
-  var senha = "", admCat = null, secaoAtiva = null, sujo = false, admFiltro = "", tRecado;
+  var token = "", sha = null, admCat = null, secaoAtiva = null, sujo = false, admFiltro = "", tRecado;
 
   function recado(txt){
     $("#admRecado").textContent = txt;
@@ -1361,9 +1366,59 @@ function observar(){
     montar(); desenhar(); observar();
   }
 
+  /* ---------- GitHub: onde o catálogo é gravado ---------- */
+  function repoAlvo(){
+    var g = CONFIG.github, dono = g.dono, repo = g.repo;
+    if(!dono || !repo){
+      var h = location.hostname;
+      if(/\.github\.io$/i.test(h)){
+        dono = h.split(".")[0];
+        var seg = location.pathname.split("/").filter(Boolean)[0];
+        repo = (seg && !/\.html?$/i.test(seg)) ? seg : h;
+      }
+    }
+    return (dono && repo) ? { dono:dono, repo:repo, branch:g.branch || "main", arquivo:g.arquivo || "protocolos.json" } : null;
+  }
+  function gh(caminho, opcoes){
+    var alvo = repoAlvo();
+    opcoes = opcoes || {};
+    opcoes.headers = Object.assign({
+      "Accept":"application/vnd.github+json",
+      "Authorization":"Bearer " + token,
+      "X-GitHub-Api-Version":"2022-11-28"
+    }, opcoes.headers || {});
+    return fetch("https://api.github.com/repos/" + alvo.dono + "/" + alvo.repo + caminho, opcoes)
+      .then(function(r){
+        return r.text().then(function(t){
+          var d = {}; try { d = t ? JSON.parse(t) : {}; } catch(e){}
+          return { ok:r.ok, status:r.status, d:d };
+        });
+      });
+  }
+  function paraBase64(txt){
+    var bytes = new TextEncoder().encode(txt), bin = "";
+    for(var i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  function deBase64(b64){
+    var bin = atob((b64 || "").replace(/\s/g,"")), bytes = new Uint8Array(bin.length);
+    for(var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  function erroGitHub(res, acao){
+    if(res.status === 401) return "Token inválido ou vencido. Gere outro no GitHub.";
+    if(res.status === 403) return "Este token não pode " + acao + ". Confira se ele tem Contents: Read and write neste repositório (e se a organização já aprovou o token).";
+    if(res.status === 404){
+      var a = repoAlvo();
+      return "O token não enxerga o repositório " + a.dono + "/" + a.repo + ". Confira se ele foi liberado para esse repositório.";
+    }
+    if(res.status === 409 || res.status === 422) return "Alguém publicou antes de você. Clique em Sair, entre de novo e refaça a alteração.";
+    return (res.d && res.d.message) ? "GitHub: " + res.d.message : "Não consegui falar com o GitHub.";
+  }
+
   /* ---------- entrada ---------- */
   $("#areaRestrita").addEventListener("click", function(){
-    if(senha){ abrirPainel(); return; }
+    if(token && admCat){ abrirPainel(); return; }
     $("#admPorta").classList.add("ver");
     document.body.style.overflow = "hidden";
     setTimeout(function(){ $("#admSenha").focus(); }, 60);
@@ -1374,49 +1429,71 @@ function observar(){
   });
   $("#admSenha").addEventListener("input", function(){ $("#admCampoSenha").classList.remove("erro"); });
 
-  $("#admEntrar").addEventListener("submit", function(e){
-    e.preventDefault();
-    var v = $("#admSenha").value;
-    if(!v){ $("#admCampoSenha").classList.add("erro"); $("#admMsgSenha").textContent = "Digite a senha."; return; }
+  function falhaEntrada(msg){
+    var btn = $("#admBtnEntrar");
+    btn.disabled = false; btn.textContent = "ENTRAR";
+    $("#admCampoSenha").classList.add("erro");
+    $("#admMsgSenha").textContent = msg;
+  }
+
+  /* Valida o token lendo o protocolos.json direto do repositório (sempre a versão mais nova,
+     sem esperar o GitHub Pages atualizar). */
+  function entrar(v, silencioso){
+    var alvo = repoAlvo();
+    if(!alvo){
+      if(!silencioso) falhaEntrada("Não sei em qual repositório gravar. Preencha CONFIG.github (dono e repo) no index.html.");
+      return;
+    }
+    token = v;
     var btn = $("#admBtnEntrar");
     btn.disabled = true; btn.textContent = "ENTRANDO…";
-    fetch("/api/catalogo?acao=entrar", {
-      method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ senha:v })
-    }).then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+    gh("/contents/" + alvo.arquivo + "?ref=" + encodeURIComponent(alvo.branch))
       .then(function(res){
-        btn.disabled = false; btn.textContent = "ENTRAR";
-        if(!res.ok){
-          $("#admCampoSenha").classList.add("erro");
-          var m = res.d.erro || "Não consegui validar a senha.";
-          if(typeof res.d.restam === "number"){
-            m += " Restam " + res.d.restam + (res.d.restam === 1 ? " tentativa" : " tentativas") + " antes do bloqueio.";
-          }
-          $("#admMsgSenha").textContent = m;
-          if(res.d.bloqueado) btn.disabled = true;
-          return;
+        if(res.status === 404 && !res.d.message){ res.d.message = "Not Found"; }
+        if(res.status === 404){
+          /* arquivo ainda não existe: confirma que o repositório é acessível */
+          return gh("").then(function(rep){
+            if(!rep.ok) throw rep;
+            sha = null;
+            admCat = { versao:0, secoes:AREA.map(function(s){ return {k:s.k,n:s.n}; }),
+                       protocolos: JSON.parse(JSON.stringify(P)) };
+            marcarSujo();
+            recado("O arquivo " + alvo.arquivo + " ainda não existe. Publique para criá-lo.");
+          });
         }
-        senha = v;
-        try { sessionStorage.setItem("dm_senha", v); } catch(e){}
+        if(!res.ok) throw res;
+        sha = res.d.sha;
+        var cat = JSON.parse(deBase64(res.d.content));
+        admCat = { versao:cat.versao || 0, secoes:cat.secoes || [], protocolos:cat.protocolos || [] };
+      })
+      .then(function(){
+        btn.disabled = false; btn.textContent = "ENTRAR";
+        try { sessionStorage.setItem("dm_token", v); } catch(e){}
         $("#admSenha").value = "";
+        secaoAtiva = admCat.secoes[0] ? admCat.secoes[0].k : null;
         abrirPainel();
       })
-      .catch(function(){
-        btn.disabled = false; btn.textContent = "ENTRAR";
-        $("#admCampoSenha").classList.add("erro");
-        $("#admMsgSenha").textContent = "Sem resposta do servidor. O site já foi publicado com a função?";
+      .catch(function(res){
+        token = ""; admCat = null;
+        try { sessionStorage.removeItem("dm_token"); } catch(e){}
+        if(silencioso){ btn.disabled = false; btn.textContent = "ENTRAR"; return; }
+        falhaEntrada(res && res.status ? erroGitHub(res, "ler o repositório")
+          : "Não consegui ler o catálogo no GitHub. Verifique a conexão e tente de novo.");
       });
+  }
+
+  $("#admEntrar").addEventListener("submit", function(e){
+    e.preventDefault();
+    var v = $("#admSenha").value.trim();
+    if(!v){ falhaEntrada("Cole o token do GitHub."); return; }
+    if(!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(v)){ falhaEntrada("Isso não parece um token do GitHub (começa com github_pat_)."); return; }
+    entrar(v);
   });
 
   function abrirPainel(){
     $("#admPorta").classList.remove("ver");
     $("#adm").classList.add("ver");
     document.body.style.overflow = "hidden";
-    if(!admCat){
-      admCat = { versao:0, secoes:AREA.map(function(s){ return {k:s.k,n:s.n}; }),
-                 protocolos: JSON.parse(JSON.stringify(P)) };
-      if(!P.length || P === SEMENTE){ marcarSujo(); recado("Catálogo inicial carregado. Publique para gravar no site."); }
-      secaoAtiva = admCat.secoes[0] ? admCat.secoes[0].k : null;
-    }
     admDesenhar();
   }
   $("#admFechar").addEventListener("click", function(){
@@ -1424,31 +1501,58 @@ function observar(){
   });
   $("#admSair").addEventListener("click", function(){
     if(sujo && !confirm("Há alterações não publicadas. Sair mesmo assim?")) return;
-    try { sessionStorage.removeItem("dm_senha"); } catch(e){}
+    sujo = false;
+    try { sessionStorage.removeItem("dm_token"); } catch(e){}
     location.reload();
   });
   window.addEventListener("beforeunload", function(e){ if(sujo){ e.preventDefault(); e.returnValue = ""; } });
 
-  /* ---------- publicar ---------- */
+  /* ---------- publicar: grava o protocolos.json no repositório ---------- */
+  function validarCatalogo(c){
+    if(!c.secoes.length) return "O catálogo precisa de ao menos uma seção.";
+    var chaves = c.secoes.map(function(s){ return s.k; });
+    for(var i = 0; i < c.protocolos.length; i++){
+      var p = c.protocolos[i];
+      if(!p.t || !String(p.t).trim()) return "Há um protocolo sem título.";
+      if(chaves.indexOf(p.a) < 0) return 'O protocolo "' + p.t + '" está numa seção que não existe.';
+    }
+    return "";
+  }
   $("#admPublicar").addEventListener("click", function(){
-    var btn = this;
+    var btn = this, alvo = repoAlvo();
+    var erro = validarCatalogo(admCat);
+    if(erro){ recado(erro); return; }
     btn.disabled = true; btn.textContent = "PUBLICANDO…";
     track("protocolos_publicar", { secoes: admCat.secoes.length, protocolos: admCat.protocolos.length });
-    fetch("/api/catalogo", {
-      method:"POST", headers:{ "content-type":"application/json", "x-senha":senha },
-      body:JSON.stringify(admCat)
-    }).then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
-      .then(function(res){
-        btn.disabled = false; btn.textContent = "PUBLICAR";
-        if(!res.ok){ recado(res.d.erro || "Não consegui publicar."); return; }
-        admCat.versao = res.d.versao;
-        sujo = false; $("#admPendente").classList.remove("ver");
-        recado("Publicado. A biblioteca já está com essas alterações.");
-      })
-      .catch(function(){
-        btn.disabled = false; btn.textContent = "PUBLICAR";
-        recado("Sem resposta do servidor ao publicar.");
-      });
+
+    var novo = {
+      versao: (admCat.versao || 0) + 1,
+      atualizadoEm: new Date().toISOString(),
+      secoes: admCat.secoes.map(function(s){ return { k:s.k, n:s.n }; }),
+      protocolos: admCat.protocolos
+    };
+    var corpo = {
+      message: "Protocolos: publicação v" + novo.versao + " pela área restrita",
+      content: paraBase64(JSON.stringify(novo, null, 1) + "\n"),
+      branch: alvo.branch
+    };
+    if(sha) corpo.sha = sha;
+
+    gh("/contents/" + alvo.arquivo, {
+      method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(corpo)
+    }).then(function(res){
+      btn.disabled = false; btn.textContent = "PUBLICAR";
+      if(!res.ok){ recado(erroGitHub(res, "publicar")); return; }
+      sha = res.d.content && res.d.content.sha;
+      admCat.versao = novo.versao;
+      atualizadoEm = new Date(novo.atualizadoEm).toLocaleDateString("pt-BR", { day:"2-digit", month:"long", year:"numeric" });
+      sujo = false; $("#admPendente").classList.remove("ver");
+      admDesenhar();
+      recado("Publicado no GitHub. O site atualiza para todo mundo em 1 a 2 minutos.");
+    }).catch(function(){
+      btn.disabled = false; btn.textContent = "PUBLICAR";
+      recado("Sem resposta do GitHub ao publicar. Verifique a conexão e tente de novo.");
+    });
   });
 
   /* ---------- desenho ---------- */
@@ -1613,13 +1717,13 @@ function observar(){
       '<div class="campo"><label for="af-r">Resumo — uma frase</label>' +
         '<input id="af-r" value="'+esc(p.r)+'" placeholder="O que esse protocolo resolve, em uma linha"></div>' +
       '<div class="campo"><label for="af-p">Parâmetros — um por linha</label>' +
-        '<textarea id="af-p" placeholder="40–42 °C&#10;7 min / hemiface">'+esc((p.p||[]).join("\\n"))+'</textarea>' +
+        '<textarea id="af-p" placeholder="40–42 °C&#10;7 min / hemiface">'+esc((p.p||[]).join("\n"))+'</textarea>' +
         '<p class="mini" style="margin-top:6px">Viram etiquetas no card. Deixe os mais decisivos primeiro.</p></div>' +
       '<div class="campo"><label for="af-s">Passo a passo — um por linha</label>' +
-        '<textarea id="af-s" style="min-height:150px" placeholder="Higienizar a pele e aplicar o gel.">'+esc((p.s||[]).join("\\n"))+'</textarea></div>' +
+        '<textarea id="af-s" style="min-height:150px" placeholder="Higienizar a pele e aplicar o gel.">'+esc((p.s||[]).join("\n"))+'</textarea></div>' +
       '<div class="campo" id="ac-fl"><label for="af-fl">Arquivos no Drive — um link ou ID por linha <span class="req">*</span></label>' +
         '<textarea id="af-fl" placeholder="https://drive.google.com/file/d/1AbC.../view">'+
-          esc((p.fl||[]).map(function(f){ return f.id + (f.t ? " | " + f.t : ""); }).join("\\n"))+'</textarea>' +
+          esc((p.fl||[]).map(function(f){ return f.id + (f.t ? " | " + f.t : ""); }).join("\n"))+'</textarea>' +
         '<p class="mini" style="margin-top:6px">Cole o link do arquivo no Drive. Para nomear, use <b>ID | nome do arquivo</b>. ' +
         'O arquivo precisa estar numa pasta compartilhada como “qualquer pessoa com o link”.</p>' +
         '<span class="msg">Informe ao menos um arquivo do Drive.</span></div>' +
@@ -1677,10 +1781,10 @@ function observar(){
     else if($("#admPorta").classList.contains("ver")) $("#admVoltar").click();
   });
 
-  /* sessão já aberta nesta aba */
+  /* sessão já aberta nesta aba: reentra sozinho */
   try {
-    var guardada = sessionStorage.getItem("dm_senha");
-    if(guardada) senha = guardada;
+    var guardado = sessionStorage.getItem("dm_token");
+    if(guardado) entrar(guardado, true);
   } catch(e){}
 })();
 
@@ -1688,7 +1792,7 @@ aplicarLinks();
 montar();
 desenhar();
 observar();
-/* carregar();  ← só no Netlify, onde existe a função /api/catalogo */
+carregar();
 </script>
 
 </body></html>
