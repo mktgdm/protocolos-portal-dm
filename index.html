@@ -1180,6 +1180,14 @@ window._load_script = function(url, callback, isSubmit) {
 #_form_3_ ._error-arrow{display:none}
 #_form_3_ ._error-inner{padding:8px 12px 8px 32px!important;background-position:10px center!important;text-align:left!important;box-shadow:none!important;line-height:1.35!important}
 #_form_3_ ._field-wrapper ._error + ._error{display:none!important}
+#_form_3_ ._form-thank-you p{margin:0 0 10px}
+#_form_3_ ._form-thank-you .ok-titulo{font-size:1.02rem;color:var(--roxo)}
+#_form_3_ ._form-thank-you .ok-botao{display:flex;align-items:center;justify-content:center;gap:9px;min-height:50px;margin:14px 0 10px;
+  padding:13px 22px;border-radius:999px;background:var(--laranja);color:#fff!important;font-weight:700;font-size:.88rem;letter-spacing:.02em;
+  text-transform:uppercase;text-decoration:none;box-shadow:0 6px 18px rgba(234,83,50,.26);transition:background-color .16s}
+#_form_3_ ._form-thank-you .ok-botao:hover{background:var(--laranja-700)}
+#_form_3_ ._form-thank-you .ok-botao svg{width:18px;height:18px;flex:none}
+#_form_3_ ._form-thank-you .ok-nota{margin:0;font-size:.8rem;color:var(--suave)}
 #_form_3_ ._form-branding{margin-top:14px!important;color:var(--suave)!important;font-size:11px!important}
 #_form_3_ ._form-branding ._logo{opacity:.55}
 @media (min-width:320px) and (max-width:667px){
@@ -1189,15 +1197,38 @@ window._load_script = function(url, callback, isSubmit) {
 }
 </style>
 <script>
-/* depois que o ActiveCampaign confirma o envio: mensagem da LP + evento de conversão */
+/* Depois que o ActiveCampaign confirma o envio.
+   O link do Drive NÃO fica neste arquivo: ele vem dentro da mensagem de agradecimento
+   configurada no formulário do AC, que só é devolvida quando a inscrição é gravada.
+   Aqui só transformamos o link dessa mensagem num botão no visual da LP. */
 window._form_callback = function(id){
   var form = document.getElementById("_form_" + id + "_");
   var mail = (form.querySelector('[name="email"]') || {}).value || "";
   var perfil = (form.querySelector('[name="field[7]"]') || {}).value || "";
   var box = form.querySelector("._form-thank-you");
-  if(box) box.innerHTML = "<b>Pronto!</b> Em instantes você recebe em <b>" + esc(mail) +
-    "</b> o link com os protocolos organizados por área e tecnologia. Confira também a caixa de spam.";
-  track("pacote_lead", { perfil: perfil });
+  if(box){
+    var tmp = document.createElement("div"); tmp.innerHTML = box.innerHTML;
+    var link = null;
+    Array.prototype.some.call(tmp.querySelectorAll("a[href]"), function(a){
+      if(/^https:\/\//i.test(a.getAttribute("href"))){ link = a.getAttribute("href"); return true; }
+    });
+    if(!link){
+      var m = (tmp.textContent || "").match(/https:\/\/(drive|docs)\.google\.com\/[^\s"<]+/i);
+      if(m) link = m[0];
+    }
+    var html = '<p class="ok-titulo"><b>Inscrição confirmada!</b></p>';
+    if(link){
+      html += '<p>Seus protocolos já estão liberados. Também enviamos o link para <b>' + esc(mail) + '</b>.</p>' +
+        '<a class="ok-botao" target="_blank" rel="noopener" data-evt="pacote_abrir_drive" href="' + esc(link) + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>' +
+        'Acessar os protocolos</a>' +
+        '<p class="ok-nota">Salve nos favoritos para consultar quando precisar.</p>';
+    } else {
+      html += '<p>Em instantes você recebe em <b>' + esc(mail) + '</b> o link com os protocolos organizados por área e tecnologia. Confira também a caixa de spam.</p>';
+    }
+    box.innerHTML = html;
+  }
+  track("pacote_lead", { perfil: perfil, liberado: !!link });
 };
 </script>
           <p class="mini" style="margin-top:12px">Seus dados vão direto para a equipe da Dermomed. Sem spam.</p>
