@@ -1157,13 +1157,17 @@ window._load_script = function(url, callback, isSubmit) {
 #_form_3_ ._form-label,#_form_3_._inline-form ._form-label{font-family:inherit!important;font-size:.79rem!important;font-weight:700!important;color:var(--tinta)!important;margin-bottom:6px;letter-spacing:.01em;line-height:1.4!important}
 #_form_3_ .field-required{color:var(--laranja)}
 #_form_3_ ._form_element input[type="text"],#_form_3_ ._form_element input[type="tel"],#_form_3_ ._form_element select,#_form_3_ .iti input{
-  width:100%;min-height:50px;padding:13px 14px!important;border:1.5px solid var(--linha)!important;border-radius:var(--r-sm)!important;
+  width:100%;min-height:50px;padding-top:13px!important;padding-bottom:13px!important;padding-right:14px!important;border:1.5px solid var(--linha)!important;border-radius:var(--r-sm)!important;
   background:#fff!important;font-family:inherit!important;font-size:.96rem!important;color:var(--tinta)!important;transition:border-color .15s,box-shadow .15s}
 #_form_3_ ._form_element select{appearance:auto}
 #_form_3_ input::placeholder{color:#a9a3b5!important}
 #_form_3_ ._form_element input:focus,#_form_3_ ._form_element select:focus,#_form_3_ .iti input:focus{outline:none;border-color:var(--roxo)!important;box-shadow:0 0 0 3px rgba(71,39,105,.13)}
 #_form_3_ input._has_error{border-color:var(--laranja)!important;box-shadow:0 0 0 3px rgba(234,83,50,.12)}
-#_form_3_ .iti--separate-dial-code input,#_form_3_ .iti--allow-dropdown input{padding-left:92px!important}
+/* campo de telefone: o espaço da bandeira (+55) é calculado pelo próprio componente (padding-left em linha) */
+#_form_3_ ._form_element input[type="text"]:not(.iti__tel-input),#_form_3_ ._form_element select{padding-left:14px!important}
+#_form_3_ .iti{display:block}
+#_form_3_ .iti__country-container{padding:1px}
+#_form_3_ .iti__selected-country{border-radius:var(--r-sm) 0 0 var(--r-sm)}
 #_form_3_ .iti__country-list{min-width:0;max-width:calc(100vw - 60px);font-size:.88rem}
 #_form_3_ ._error-inner{font-family:inherit;font-weight:600;font-size:.78rem;background-color:var(--laranja-100);color:var(--laranja-700);box-shadow:var(--sombra)}
 #_form_3_ ._error._above ._error-arrow{border-top-color:var(--laranja-100)}
